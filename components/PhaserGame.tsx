@@ -23,6 +23,8 @@ type FlowZone = {
   forceY: number;
 };
 
+type SoundName = "jump" | "solid" | "liquid" | "gas" | "clear" | "hurt";
+
 const WIDTH = 960;
 const HEIGHT = 540;
 
@@ -32,8 +34,81 @@ const stateLabels: Record<CatState, string> = {
   gas: "気体"
 };
 
+class SimpleSynth {
+  private context: AudioContext | null = null;
+
+  unlock() {
+    const AudioContextClass =
+      window.AudioContext ||
+      (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+
+    if (!this.context && AudioContextClass) {
+      this.context = new AudioContextClass();
+    }
+
+    if (this.context?.state === "suspended") {
+      void this.context.resume();
+    }
+  }
+
+  play(name: SoundName) {
+    this.unlock();
+
+    if (!this.context || this.context.state !== "running") {
+      return;
+    }
+
+    if (name === "jump") {
+      this.tone(360, 680, 0.11, "square", 0.08);
+    } else if (name === "solid") {
+      this.tone(150, 92, 0.12, "triangle", 0.1);
+    } else if (name === "liquid") {
+      this.tone(420, 220, 0.16, "sine", 0.08);
+      this.tone(620, 340, 0.08, "sine", 0.04, 0.03);
+    } else if (name === "gas") {
+      this.tone(540, 980, 0.22, "sine", 0.07);
+    } else if (name === "clear") {
+      this.tone(523, 659, 0.12, "triangle", 0.08);
+      this.tone(659, 784, 0.12, "triangle", 0.08, 0.1);
+      this.tone(784, 1046, 0.22, "triangle", 0.08, 0.2);
+    } else {
+      this.tone(180, 70, 0.22, "sawtooth", 0.07);
+    }
+  }
+
+  private tone(
+    startFrequency: number,
+    endFrequency: number,
+    duration: number,
+    type: OscillatorType,
+    volume: number,
+    delay = 0
+  ) {
+    if (!this.context) {
+      return;
+    }
+
+    const now = this.context.currentTime + delay;
+    const oscillator = this.context.createOscillator();
+    const gain = this.context.createGain();
+
+    oscillator.type = type;
+    oscillator.frequency.setValueAtTime(startFrequency, now);
+    oscillator.frequency.exponentialRampToValueAtTime(endFrequency, now + duration);
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(volume, now + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+
+    oscillator.connect(gain);
+    gain.connect(this.context.destination);
+    oscillator.start(now);
+    oscillator.stop(now + duration + 0.02);
+  }
+}
+
 export default function PhaserGame() {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const audioRef = useRef(new SimpleSynth());
   const controlsRef = useRef<TouchControls>({
     left: false,
     right: false,
@@ -45,12 +120,14 @@ export default function PhaserGame() {
     (control: "left" | "right" | "jump", pressed: boolean) =>
     (event: PointerEvent<HTMLButtonElement>) => {
       event.preventDefault();
+      audioRef.current.unlock();
       controlsRef.current[control] = pressed;
     };
 
   const requestState =
     (state: CatState) => (event: PointerEvent<HTMLButtonElement>) => {
       event.preventDefault();
+      audioRef.current.unlock();
       controlsRef.current.state = state;
     };
 
@@ -136,6 +213,9 @@ export default function PhaserGame() {
             body.setGravityY(-820);
             body.setMaxVelocity(105, 115);
             this.cat.setDragX(260);
+            if (jumpJustDown) {
+              audioRef.current.play("jump");
+            }
             if (jumpDown) {
               this.cat.setVelocityY(-112);
             } else if (this.cat.body.velocity.y > -42) {
@@ -152,6 +232,7 @@ export default function PhaserGame() {
 
             if (jumpJustDown && body.blocked.down) {
               this.cat.setVelocityY(this.catState === "solid" ? -390 : -245);
+              audioRef.current.play("jump");
             }
           }
 
@@ -255,6 +336,7 @@ export default function PhaserGame() {
           this.key1 = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ONE);
           this.key2 = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.TWO);
           this.key3 = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.THREE);
+          this.input.keyboard!.on("keydown", () => audioRef.current.unlock());
         }
 
         private createUi() {
@@ -282,6 +364,7 @@ export default function PhaserGame() {
         }
 
         private setCatState(nextState: CatState) {
+          const previousState = this.catState;
           this.catState = nextState;
           const body = this.cat.body;
 
@@ -298,6 +381,10 @@ export default function PhaserGame() {
 
           this.updateStateText();
           this.syncCatParts();
+
+          if (previousState !== nextState) {
+            audioRef.current.play(nextState);
+          }
         }
 
         private applyLiquidFlow(left: boolean, right: boolean) {
@@ -352,6 +439,7 @@ export default function PhaserGame() {
         }
 
         private resetCat() {
+          audioRef.current.play("hurt");
           this.cat.setPosition(74, 456);
           this.cat.setVelocity(0, 0);
           this.setCatState("solid");
@@ -359,6 +447,7 @@ export default function PhaserGame() {
 
         private clearGame() {
           this.cleared = true;
+          audioRef.current.play("clear");
           this.messageText.setText("CLEAR!\nねこはゴールに到達した").setVisible(true);
           this.cat.setVelocity(0, 0);
         }

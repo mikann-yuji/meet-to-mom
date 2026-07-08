@@ -4,4 +4,4 @@ out
 dist
 .env*
 *.log
-vercel
+.vercel

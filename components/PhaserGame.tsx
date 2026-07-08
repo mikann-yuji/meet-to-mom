@@ -1,11 +1,27 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { PointerEvent, useEffect, useRef } from "react";
 
 type PhaserModule = typeof import("phaser");
 type PhaserGameInstance = InstanceType<PhaserModule["Game"]>;
 
 type CatState = "solid" | "liquid" | "gas";
+
+type TouchControls = {
+  left: boolean;
+  right: boolean;
+  jump: boolean;
+  state: CatState | null;
+};
+
+type FlowZone = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  forceX: number;
+  forceY: number;
+};
 
 const WIDTH = 960;
 const HEIGHT = 540;
@@ -18,6 +34,25 @@ const stateLabels: Record<CatState, string> = {
 
 export default function PhaserGame() {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const controlsRef = useRef<TouchControls>({
+    left: false,
+    right: false,
+    jump: false,
+    state: null
+  });
+
+  const holdControl =
+    (control: "left" | "right" | "jump", pressed: boolean) =>
+    (event: PointerEvent<HTMLButtonElement>) => {
+      event.preventDefault();
+      controlsRef.current[control] = pressed;
+    };
+
+  const requestState =
+    (state: CatState) => (event: PointerEvent<HTMLButtonElement>) => {
+      event.preventDefault();
+      controlsRef.current.state = state;
+    };
 
   useEffect(() => {
     let game: PhaserGameInstance | null = null;
@@ -42,7 +77,9 @@ export default function PhaserGame() {
         private key3!: Phaser.Input.Keyboard.Key;
         private stateText!: Phaser.GameObjects.Text;
         private messageText!: Phaser.GameObjects.Text;
+        private flowZones: FlowZone[] = [];
         private catState: CatState = "solid";
+        private jumpWasDown = false;
         private cleared = false;
 
         constructor() {
@@ -64,6 +101,12 @@ export default function PhaserGame() {
             return;
           }
 
+          const requestedState = controlsRef.current.state;
+          if (requestedState) {
+            this.setCatState(requestedState);
+            controlsRef.current.state = null;
+          }
+
           if (Phaser.Input.Keyboard.JustDown(this.key1)) {
             this.setCatState("solid");
           }
@@ -75,32 +118,44 @@ export default function PhaserGame() {
           }
 
           const body = this.cat.body;
-          const left = this.cursors.left.isDown || this.keyA.isDown;
-          const right = this.cursors.right.isDown || this.keyD.isDown;
-          const speed = this.catState === "gas" ? 95 : this.catState === "liquid" ? 155 : 205;
+          const left = this.cursors.left.isDown || this.keyA.isDown || controlsRef.current.left;
+          const right = this.cursors.right.isDown || this.keyD.isDown || controlsRef.current.right;
+          const jumpDown = this.cursors.space.isDown || controlsRef.current.jump;
+          const jumpJustDown = Phaser.Input.Keyboard.JustDown(this.cursors.space) || (jumpDown && !this.jumpWasDown);
+          const speed = this.catState === "gas" ? 88 : this.catState === "liquid" ? 150 : 205;
 
           if (left) {
             this.cat.setVelocityX(-speed);
           } else if (right) {
             this.cat.setVelocityX(speed);
-          } else {
+          } else if (this.catState !== "liquid") {
             this.cat.setVelocityX(0);
           }
 
           if (this.catState === "gas") {
-            body.setGravityY(-600);
-            body.setMaxVelocity(120, 90);
-            if (this.cursors.space.isDown) {
-              this.cat.setVelocityY(-86);
+            body.setGravityY(-820);
+            body.setMaxVelocity(105, 115);
+            this.cat.setDragX(260);
+            if (jumpDown) {
+              this.cat.setVelocityY(-112);
+            } else if (this.cat.body.velocity.y > -42) {
+              this.cat.setVelocityY(-42);
             }
           } else {
-            body.setGravityY(this.catState === "solid" ? 240 : 120);
-            body.setMaxVelocity(500, 680);
-            if (Phaser.Input.Keyboard.JustDown(this.cursors.space) && body.blocked.down) {
-              this.cat.setVelocityY(this.catState === "solid" ? -390 : -285);
+            body.setGravityY(this.catState === "solid" ? 240 : 190);
+            body.setMaxVelocity(520, 680);
+            this.cat.setDragX(this.catState === "liquid" ? 90 : 1400);
+
+            if (this.catState === "liquid") {
+              this.applyLiquidFlow(left, right);
+            }
+
+            if (jumpJustDown && body.blocked.down) {
+              this.cat.setVelocityY(this.catState === "solid" ? -390 : -245);
             }
           }
 
+          this.jumpWasDown = jumpDown;
           this.syncCatParts();
         }
 
@@ -119,6 +174,23 @@ export default function PhaserGame() {
             platforms.add(block);
             return block;
           };
+          const addSlope = (x: number, y: number, width: number, height: number, forceX: number) => {
+            this.add
+              .triangle(x, y, -width / 2, height / 2, width / 2, height / 2, width / 2, -height / 2, 0x4f5d6c)
+              .setAlpha(0.95);
+            this.add
+              .line(x, y, -width / 2, height / 2, width / 2, -height / 2, 0x9fb1c3)
+              .setLineWidth(4)
+              .setAlpha(0.45);
+            this.flowZones.push({
+              x,
+              y,
+              width,
+              height,
+              forceX,
+              forceY: 24
+            });
+          };
 
           addBlock(WIDTH / 2, 520, WIDTH, 40, 0x3a4654);
           addBlock(210, 430, 220, 28);
@@ -129,6 +201,8 @@ export default function PhaserGame() {
           addBlock(770, 474, 230, 52, 0x596675);
           addBlock(785, 407, 205, 24, 0x596675);
           addBlock(900, 250, 110, 28);
+          addSlope(236, 495, 190, 80, 210);
+          addSlope(535, 414, 145, 68, 190);
 
           const hazard = this.add.rectangle(610, 502, 70, 18, 0xd86b55);
           this.physics.add.existing(hazard, true);
@@ -216,14 +290,37 @@ export default function PhaserGame() {
             body.setSize(42, 44).setOffset(11, 10).setMass(2);
           } else if (nextState === "liquid") {
             this.cat.setDisplaySize(54, 24).setTint(0x63c6d8);
-            body.setSize(54, 24).setOffset(5, 28).setMass(0.8);
+            body.setSize(54, 24).setOffset(5, 28).setMass(0.55);
           } else {
             this.cat.setDisplaySize(38, 42).setTint(0xd7d9f5);
-            body.setSize(38, 42).setOffset(13, 11).setMass(0.25);
+            body.setSize(38, 42).setOffset(13, 11).setMass(0.2);
           }
 
           this.updateStateText();
           this.syncCatParts();
+        }
+
+        private applyLiquidFlow(left: boolean, right: boolean) {
+          const activeZone = this.flowZones.find((zone) =>
+            Phaser.Geom.Rectangle.Contains(
+              new Phaser.Geom.Rectangle(
+                zone.x - zone.width / 2,
+                zone.y - zone.height / 2,
+                zone.width,
+                zone.height
+              ),
+              this.cat.x,
+              this.cat.y + this.cat.displayHeight / 2
+            )
+          );
+
+          if (!activeZone) {
+            return;
+          }
+
+          const playerInput = left || right ? 0.45 : 1;
+          this.cat.setVelocityX(this.cat.body.velocity.x + activeZone.forceX * playerInput * (1 / 60));
+          this.cat.setVelocityY(Math.max(this.cat.body.velocity.y, activeZone.forceY));
         }
 
         private syncCatParts() {
@@ -295,5 +392,55 @@ export default function PhaserGame() {
     };
   }, []);
 
-  return <div ref={containerRef} className="game-frame" />;
+  return (
+    <div className="play-area">
+      <div ref={containerRef} className="game-frame" />
+      <div className="touch-controls" aria-label="スマホ用操作ボタン">
+        <div className="touch-cluster">
+          <button
+            type="button"
+            aria-label="左へ移動"
+            onPointerDown={holdControl("left", true)}
+            onPointerUp={holdControl("left", false)}
+            onPointerCancel={holdControl("left", false)}
+            onPointerLeave={holdControl("left", false)}
+          >
+            ←
+          </button>
+          <button
+            type="button"
+            aria-label="右へ移動"
+            onPointerDown={holdControl("right", true)}
+            onPointerUp={holdControl("right", false)}
+            onPointerCancel={holdControl("right", false)}
+            onPointerLeave={holdControl("right", false)}
+          >
+            →
+          </button>
+        </div>
+        <div className="touch-cluster state-cluster">
+          <button type="button" aria-label="固体に変化" onPointerDown={requestState("solid")}>
+            固
+          </button>
+          <button type="button" aria-label="液体に変化" onPointerDown={requestState("liquid")}>
+            液
+          </button>
+          <button type="button" aria-label="気体に変化" onPointerDown={requestState("gas")}>
+            気
+          </button>
+        </div>
+        <button
+          type="button"
+          className="jump-button"
+          aria-label="ジャンプまたは上昇"
+          onPointerDown={holdControl("jump", true)}
+          onPointerUp={holdControl("jump", false)}
+          onPointerCancel={holdControl("jump", false)}
+          onPointerLeave={holdControl("jump", false)}
+        >
+          JUMP
+        </button>
+      </div>
+    </div>
+  );
 }

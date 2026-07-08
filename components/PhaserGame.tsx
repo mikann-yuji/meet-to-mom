@@ -27,6 +27,7 @@ type SoundName = "jump" | "solid" | "liquid" | "gas" | "clear" | "hurt";
 
 const WIDTH = 960;
 const HEIGHT = 540;
+const WORLD_WIDTH = 3200;
 
 const stateLabels: Record<CatState, string> = {
   solid: "固体",
@@ -164,10 +165,13 @@ export default function PhaserGame() {
         }
 
         create() {
-          this.physics.world.setBounds(0, 0, WIDTH, HEIGHT);
+          this.physics.world.setBounds(0, 0, WORLD_WIDTH, HEIGHT);
+          this.cameras.main.setBounds(0, 0, WORLD_WIDTH, HEIGHT);
           this.addSky();
           this.createCat();
           this.createLevel();
+          this.cameras.main.startFollow(this.cat, true, 0.09, 0.09);
+          this.cameras.main.setDeadzone(180, 120);
           this.createInput();
           this.createUi();
         }
@@ -175,6 +179,7 @@ export default function PhaserGame() {
         update() {
           if (this.cleared) {
             this.cat.setVelocityX(0);
+            this.syncCatParts();
             return;
           }
 
@@ -237,14 +242,22 @@ export default function PhaserGame() {
           }
 
           this.jumpWasDown = jumpDown;
+          if (this.cat.y > HEIGHT + 80) {
+            this.resetCat();
+          }
           this.syncCatParts();
         }
 
         private addSky() {
           this.cameras.main.setBackgroundColor("#202833");
-          this.add.rectangle(WIDTH / 2, HEIGHT - 26, WIDTH, 52, 0x20242c).setScrollFactor(0);
-          for (let i = 0; i < 14; i += 1) {
-            this.add.circle(80 + i * 70, 78 + (i % 3) * 28, 2, 0xf6f2e8, 0.25);
+          this.add.rectangle(WORLD_WIDTH / 2, HEIGHT - 26, WORLD_WIDTH, 52, 0x20242c);
+          for (let i = 0; i < 54; i += 1) {
+            this.add.circle(80 + i * 62, 72 + (i % 4) * 30, 2, 0xf6f2e8, 0.22);
+          }
+          for (let i = 0; i < 9; i += 1) {
+            this.add.rectangle(250 + i * 380, 500, 210, 74, 0x27313c, 0.5);
+            this.add.circle(190 + i * 380, 455, 48, 0x27313c, 0.5);
+            this.add.circle(265 + i * 380, 438, 66, 0x27313c, 0.5);
           }
         }
 
@@ -273,24 +286,47 @@ export default function PhaserGame() {
             });
           };
 
-          addBlock(WIDTH / 2, 520, WIDTH, 40, 0x3a4654);
-          addBlock(210, 430, 220, 28);
-          addBlock(470, 374, 170, 28);
-          addBlock(720, 330, 250, 28);
-          addBlock(395, 474, 185, 52, 0x52606e);
-          addBlock(585, 444, 190, 28, 0x52606e);
-          addBlock(770, 474, 230, 52, 0x596675);
-          addBlock(785, 407, 205, 24, 0x596675);
-          addBlock(900, 250, 110, 28);
-          addSlope(236, 495, 190, 80, 210);
-          addSlope(535, 414, 145, 68, 190);
+          [
+            [230, 520, 460, 40],
+            [750, 520, 360, 40],
+            [1250, 520, 520, 40],
+            [1870, 520, 440, 40],
+            [2470, 520, 660, 40],
+            [3020, 520, 300, 40]
+          ].forEach(([x, y, w, h]) => addBlock(x, y, w, h, 0x3a4654));
 
-          const hazard = this.add.rectangle(610, 502, 70, 18, 0xd86b55);
-          this.physics.add.existing(hazard, true);
+          addBlock(230, 430, 220, 28);
+          addBlock(505, 374, 170, 28);
+          addBlock(760, 330, 250, 28);
+          addBlock(1030, 470, 210, 52, 0x52606e);
+          addBlock(1220, 432, 210, 28, 0x52606e);
+          addBlock(1430, 395, 190, 28);
+          addBlock(1640, 350, 150, 28);
+          addBlock(1860, 300, 210, 28);
+          addBlock(2140, 455, 230, 28, 0x596675);
+          addBlock(2290, 395, 210, 24, 0x596675);
+          addBlock(2480, 335, 180, 28);
+          addBlock(2725, 285, 160, 28);
+          addBlock(2960, 250, 150, 28);
 
-          const goal = this.add.rectangle(914, 205, 34, 90, 0x74d49b, 0.8);
-          this.add.rectangle(914, 154, 50, 12, 0xf0c65a);
-          this.add.text(880, 96, "GOAL", {
+          addBlock(1125, 476, 190, 52, 0x596675);
+          addBlock(1140, 407, 205, 24, 0x596675);
+          addBlock(2260, 476, 220, 52, 0x596675);
+          addBlock(2275, 407, 205, 24, 0x596675);
+
+          addSlope(260, 495, 190, 80, 210);
+          addSlope(625, 414, 145, 68, 190);
+          addSlope(1535, 492, 260, 86, 235);
+          addSlope(2410, 468, 230, 96, 230);
+
+          const hazards = this.physics.add.staticGroup();
+          [575, 970, 1735, 2070, 2850].forEach((x) => {
+            hazards.add(this.add.rectangle(x, 502, 96, 18, 0xd86b55));
+          });
+
+          const goal = this.add.rectangle(3090, 205, 34, 90, 0x74d49b, 0.8);
+          this.add.rectangle(3090, 154, 50, 12, 0xf0c65a);
+          this.add.text(3056, 96, "GOAL", {
             color: "#f6f2e8",
             fontFamily: "Arial",
             fontSize: "18px",
@@ -299,7 +335,7 @@ export default function PhaserGame() {
           this.physics.add.existing(goal, true);
 
           this.physics.add.collider(this.cat, platforms);
-          this.physics.add.collider(this.cat, hazard, () => this.resetCat());
+          this.physics.add.collider(this.cat, hazards, () => this.resetCat());
           this.physics.add.overlap(this.cat, goal, () => this.clearGame());
         }
 
@@ -345,7 +381,7 @@ export default function PhaserGame() {
             fontFamily: "Arial",
             fontSize: "18px",
             fontStyle: "bold"
-          });
+          }).setScrollFactor(0).setDepth(30);
           this.messageText = this.add
             .text(WIDTH / 2, HEIGHT / 2 - 30, "", {
               align: "center",
@@ -358,6 +394,7 @@ export default function PhaserGame() {
               padding: { x: 20, y: 16 }
             })
             .setOrigin(0.5)
+            .setScrollFactor(0)
             .setDepth(20)
             .setVisible(false);
           this.updateStateText();

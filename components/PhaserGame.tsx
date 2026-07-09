@@ -157,6 +157,7 @@ export default function PhaserGame() {
         private messageText!: Phaser.GameObjects.Text;
         private flowZones: FlowZone[] = [];
         private catState: CatState = "solid";
+        private cameraLookAhead = 0;
         private jumpWasDown = false;
         private cleared = false;
 
@@ -170,8 +171,7 @@ export default function PhaserGame() {
           this.addSky();
           this.createCat();
           this.createLevel();
-          this.cameras.main.startFollow(this.cat, true, 0.09, 0.09);
-          this.cameras.main.setDeadzone(180, 120);
+          this.cameras.main.scrollX = 0;
           this.createInput();
           this.createUi();
         }
@@ -179,6 +179,7 @@ export default function PhaserGame() {
         update() {
           if (this.cleared) {
             this.cat.setVelocityX(0);
+            this.updateCamera(false, false);
             this.syncCatParts();
             return;
           }
@@ -245,6 +246,7 @@ export default function PhaserGame() {
           if (this.cat.y > HEIGHT + 80) {
             this.resetCat();
           }
+          this.updateCamera(left, right);
           this.syncCatParts();
         }
 
@@ -445,6 +447,24 @@ export default function PhaserGame() {
           const playerInput = left || right ? 0.45 : 1;
           this.cat.setVelocityX(this.cat.body.velocity.x + activeZone.forceX * playerInput * (1 / 60));
           this.cat.setVelocityY(Math.max(this.cat.body.velocity.y, activeZone.forceY));
+        }
+
+        private updateCamera(left: boolean, right: boolean) {
+          const velocityX = this.cat.body.velocity.x;
+          const movingRight = right || (!left && velocityX > 35);
+          const movingLeft = left || (!right && velocityX < -35);
+          const targetLookAhead = movingRight ? 190 : movingLeft ? -190 : 0;
+
+          this.cameraLookAhead = Phaser.Math.Linear(this.cameraLookAhead, targetLookAhead, 0.08);
+
+          const desiredScrollX = Phaser.Math.Clamp(
+            this.cat.x + this.cameraLookAhead - WIDTH / 2,
+            0,
+            WORLD_WIDTH - WIDTH
+          );
+
+          this.cameras.main.scrollX = Phaser.Math.Linear(this.cameras.main.scrollX, desiredScrollX, 0.12);
+          this.cameras.main.scrollY = 0;
         }
 
         private syncCatParts() {

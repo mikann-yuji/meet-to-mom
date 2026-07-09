@@ -157,7 +157,7 @@ export default function PhaserGame() {
         private messageText!: Phaser.GameObjects.Text;
         private flowZones: FlowZone[] = [];
         private catState: CatState = "solid";
-        private cameraLookAhead = 0;
+        private cameraLookAhead = 190;
         private jumpWasDown = false;
         private cleared = false;
 
@@ -453,9 +453,12 @@ export default function PhaserGame() {
           const velocityX = this.cat.body.velocity.x;
           const movingRight = right || (!left && velocityX > 35);
           const movingLeft = left || (!right && velocityX < -35);
-          const targetLookAhead = movingRight ? 190 : movingLeft ? -190 : 0;
 
-          this.cameraLookAhead = Phaser.Math.Linear(this.cameraLookAhead, targetLookAhead, 0.08);
+          if (movingRight) {
+            this.cameraLookAhead = Phaser.Math.Linear(this.cameraLookAhead, 190, 0.12);
+          } else if (movingLeft) {
+            this.cameraLookAhead = Phaser.Math.Linear(this.cameraLookAhead, -190, 0.12);
+          }
 
           const desiredScrollX = Phaser.Math.Clamp(
             this.cat.x + this.cameraLookAhead - WIDTH / 2,
